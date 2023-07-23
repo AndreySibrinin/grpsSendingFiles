@@ -11,11 +11,23 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 func main() {
 
-	conn, err := grpc.Dial("localhost:50050", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpcPort, err := strconv.Atoi(getVar("GRPC_PORT_CLIENT", "50050"))
+
+	if err != nil {
+		log.Fatalf("GRPC_PORT doesn't look like an integer: %s", err)
+	}
+
+	grpcHost := getVar("GRPC_HOST_CLIENT", "0.0.0.0")
+
+	grpcAddr := fmt.Sprintf("%s:%d", grpcHost, grpcPort)
+
+	conn, err := grpc.Dial(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -135,4 +147,14 @@ func getListFiles(client v1.FileUploadServiceClient) {
 	}
 
 	log.Printf("Getting the list of files completed")
+
+}
+
+func getVar(key string, fallback string) string {
+
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+
+	return fallback
 }
