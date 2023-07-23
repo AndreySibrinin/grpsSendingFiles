@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	maxUploadCons   = 1
-	maxDownloadCons = 1
+	maxUploadCons   = 10
+	maxDownloadCons = 10
 	maxListCons     = 100
 )
 
