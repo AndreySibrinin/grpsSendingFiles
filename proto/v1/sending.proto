@@ -4,14 +4,14 @@ option go_package = "./proto/v1";
 package v1;
 
 service FileUploadService {
-  rpc UploadFile(FileUploadRequest) returns (FileUploadResponse) {}
-  rpc DownloadFile(FileDownloadRequest) returns (FileDownloadResponse) {}
+  rpc UploadFile(stream FileUploadRequest) returns (FileUploadResponse) {}
+  rpc DownloadFile(FileDownloadRequest) returns (stream FileDownloadResponse) {}
   rpc GetListFiles(ListFilesRequest) returns (stream ListFilesResponse) {}
 }
 
 
 message FileUploadRequest {
-  bytes file_content = 1;
+  bytes file_chunk = 1;
   string file_name = 2;
 }
 

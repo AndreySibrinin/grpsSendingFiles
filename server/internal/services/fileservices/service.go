@@ -1,11 +1,11 @@
 package fileservices
 
 import (
-	"context"
 	"errors"
-	v1 "github.com/AndreySibrinin/grspSendingFiles/proto/v1"
+	"github.com/AndreySibrinin/grspSendingFiles/proto/v1"
 	"github.com/AndreySibrinin/grspSendingFiles/server/internal/models"
 	"github.com/djherbis/times"
+	"io"
 	"log"
 	"path/filepath"
 	"time"
@@ -22,19 +22,63 @@ func New(fr FileRepo) *Service {
 	}
 }
 
-func (s *Service) UploadFile(ctx context.Context, req *v1.FileUploadRequest) (*v1.FileUploadResponse, error) {
-	file := &models.File{
-		Name:    req.GetFileName(),
-		Content: req.GetFileContent(),
+func (s *Service) UploadFile(stream v1.FileUploadService_UploadFileServer) error {
+
+	var fileBytes []byte
+	var fileName string
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
+
+			file := &models.File{
+				Name:    fileName,
+				Content: fileBytes,
+			}
+
+			if err := s.repo.UploadFile(file); err != nil {
+				log.Printf("Failed to upload file '%s': %v", file.Name, err)
+				return errors.New("failed to upload file: " + err.Error())
+			}
+
+			log.Printf("File '%s' uploaded successfully", "test.txt")
+			return stream.SendAndClose(&v1.FileUploadResponse{
+				Message: "File uploaded successfully.",
+			})
+		}
+
+		if err != nil {
+			return err
+		}
+
+		fileBytes = append(fileBytes, chunk.GetFileChunk()...)
+		fileName = chunk.GetFileName()
+	}
+}
+
+func (s *Service) DownloadFile(req *v1.FileDownloadRequest, stream v1.FileUploadService_DownloadFileServer) error {
+
+	file, err := s.repo.DownloadFile(req.GetFileName())
+	if err != nil {
+		log.Printf("Failed to download file '%s': %v", req.GetFileName(), err)
+		return errors.New("failed to download file: " + err.Error())
+	}
+	optimalChunkSize := 512 * 1024
+
+	for i := 0; i < len(file.Content); i += optimalChunkSize {
+		end := i + optimalChunkSize
+		if end > len(file.Content) {
+			end = len(file.Content)
+		}
+
+		chunk := file.Content[i:end]
+
+		if err := stream.Send(&v1.FileDownloadResponse{FileContent: chunk}); err != nil {
+			return err
+		}
 	}
 
-	if err := s.repo.UploadFile(file); err != nil {
-		log.Printf("Failed to upload file '%s': %v", file.Name, err)
-		return nil, errors.New("failed to upload file: " + err.Error())
-	}
-
-	log.Printf("File '%s' uploaded successfully", file.Name)
-	return &v1.FileUploadResponse{Message: "File uploaded successfully."}, nil
+	log.Printf("File '%s' downloaded successfully", file.Name)
+	return nil
 }
 
 func (s *Service) GetListFiles(req *v1.ListFilesRequest, stream v1.FileUploadService_GetListFilesServer) error {
@@ -74,15 +118,4 @@ func (s *Service) GetListFiles(req *v1.ListFilesRequest, stream v1.FileUploadSer
 
 	log.Printf("File list sent successfully")
 	return nil
-}
-
-func (s *Service) DownloadFile(ctx context.Context, req *v1.FileDownloadRequest) (*v1.FileDownloadResponse, error) {
-	file, err := s.repo.DownloadFile(req.GetFileName())
-	if err != nil {
-		log.Printf("Failed to download file '%s': %v", req.GetFileName(), err)
-		return nil, errors.New("failed to download file: " + err.Error())
-	}
-
-	log.Printf("File '%s' downloaded successfully", file.Name)
-	return &v1.FileDownloadResponse{FileContent: file.Content}, nil
 }

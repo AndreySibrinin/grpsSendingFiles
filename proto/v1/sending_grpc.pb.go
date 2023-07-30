@@ -22,8 +22,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FileUploadServiceClient interface {
-	UploadFile(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUploadResponse, error)
-	DownloadFile(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (*FileDownloadResponse, error)
+	UploadFile(ctx context.Context, opts ...grpc.CallOption) (FileUploadService_UploadFileClient, error)
+	DownloadFile(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (FileUploadService_DownloadFileClient, error)
 	GetListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (FileUploadService_GetListFilesClient, error)
 }
 
@@ -35,26 +35,74 @@ func NewFileUploadServiceClient(cc grpc.ClientConnInterface) FileUploadServiceCl
 	return &fileUploadServiceClient{cc}
 }
 
-func (c *fileUploadServiceClient) UploadFile(ctx context.Context, in *FileUploadRequest, opts ...grpc.CallOption) (*FileUploadResponse, error) {
-	out := new(FileUploadResponse)
-	err := c.cc.Invoke(ctx, "/v1.FileUploadService/UploadFile", in, out, opts...)
+func (c *fileUploadServiceClient) UploadFile(ctx context.Context, opts ...grpc.CallOption) (FileUploadService_UploadFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileUploadService_ServiceDesc.Streams[0], "/v1.FileUploadService/UploadFile", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &fileUploadServiceUploadFileClient{stream}
+	return x, nil
 }
 
-func (c *fileUploadServiceClient) DownloadFile(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (*FileDownloadResponse, error) {
-	out := new(FileDownloadResponse)
-	err := c.cc.Invoke(ctx, "/v1.FileUploadService/DownloadFile", in, out, opts...)
+type FileUploadService_UploadFileClient interface {
+	Send(*FileUploadRequest) error
+	CloseAndRecv() (*FileUploadResponse, error)
+	grpc.ClientStream
+}
+
+type fileUploadServiceUploadFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileUploadServiceUploadFileClient) Send(m *FileUploadRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *fileUploadServiceUploadFileClient) CloseAndRecv() (*FileUploadResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(FileUploadResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileUploadServiceClient) DownloadFile(ctx context.Context, in *FileDownloadRequest, opts ...grpc.CallOption) (FileUploadService_DownloadFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileUploadService_ServiceDesc.Streams[1], "/v1.FileUploadService/DownloadFile", opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &fileUploadServiceDownloadFileClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type FileUploadService_DownloadFileClient interface {
+	Recv() (*FileDownloadResponse, error)
+	grpc.ClientStream
+}
+
+type fileUploadServiceDownloadFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileUploadServiceDownloadFileClient) Recv() (*FileDownloadResponse, error) {
+	m := new(FileDownloadResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *fileUploadServiceClient) GetListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (FileUploadService_GetListFilesClient, error) {
-	stream, err := c.cc.NewStream(ctx, &FileUploadService_ServiceDesc.Streams[0], "/v1.FileUploadService/GetListFiles", opts...)
+	stream, err := c.cc.NewStream(ctx, &FileUploadService_ServiceDesc.Streams[2], "/v1.FileUploadService/GetListFiles", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +137,8 @@ func (x *fileUploadServiceGetListFilesClient) Recv() (*ListFilesResponse, error)
 // All implementations must embed UnimplementedFileUploadServiceServer
 // for forward compatibility
 type FileUploadServiceServer interface {
-	UploadFile(context.Context, *FileUploadRequest) (*FileUploadResponse, error)
-	DownloadFile(context.Context, *FileDownloadRequest) (*FileDownloadResponse, error)
+	UploadFile(FileUploadService_UploadFileServer) error
+	DownloadFile(*FileDownloadRequest, FileUploadService_DownloadFileServer) error
 	GetListFiles(*ListFilesRequest, FileUploadService_GetListFilesServer) error
 	mustEmbedUnimplementedFileUploadServiceServer()
 }
@@ -99,11 +147,11 @@ type FileUploadServiceServer interface {
 type UnimplementedFileUploadServiceServer struct {
 }
 
-func (UnimplementedFileUploadServiceServer) UploadFile(context.Context, *FileUploadRequest) (*FileUploadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UploadFile not implemented")
+func (UnimplementedFileUploadServiceServer) UploadFile(FileUploadService_UploadFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method UploadFile not implemented")
 }
-func (UnimplementedFileUploadServiceServer) DownloadFile(context.Context, *FileDownloadRequest) (*FileDownloadResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DownloadFile not implemented")
+func (UnimplementedFileUploadServiceServer) DownloadFile(*FileDownloadRequest, FileUploadService_DownloadFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method DownloadFile not implemented")
 }
 func (UnimplementedFileUploadServiceServer) GetListFiles(*ListFilesRequest, FileUploadService_GetListFilesServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetListFiles not implemented")
@@ -121,40 +169,51 @@ func RegisterFileUploadServiceServer(s grpc.ServiceRegistrar, srv FileUploadServ
 	s.RegisterService(&FileUploadService_ServiceDesc, srv)
 }
 
-func _FileUploadService_UploadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileUploadRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FileUploadServiceServer).UploadFile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/v1.FileUploadService/UploadFile",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileUploadServiceServer).UploadFile(ctx, req.(*FileUploadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _FileUploadService_UploadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FileUploadServiceServer).UploadFile(&fileUploadServiceUploadFileServer{stream})
 }
 
-func _FileUploadService_DownloadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileDownloadRequest)
-	if err := dec(in); err != nil {
+type FileUploadService_UploadFileServer interface {
+	SendAndClose(*FileUploadResponse) error
+	Recv() (*FileUploadRequest, error)
+	grpc.ServerStream
+}
+
+type fileUploadServiceUploadFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileUploadServiceUploadFileServer) SendAndClose(m *FileUploadResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *fileUploadServiceUploadFileServer) Recv() (*FileUploadRequest, error) {
+	m := new(FileUploadRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(FileUploadServiceServer).DownloadFile(ctx, in)
+	return m, nil
+}
+
+func _FileUploadService_DownloadFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(FileDownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/v1.FileUploadService/DownloadFile",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileUploadServiceServer).DownloadFile(ctx, req.(*FileDownloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(FileUploadServiceServer).DownloadFile(m, &fileUploadServiceDownloadFileServer{stream})
+}
+
+type FileUploadService_DownloadFileServer interface {
+	Send(*FileDownloadResponse) error
+	grpc.ServerStream
+}
+
+type fileUploadServiceDownloadFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileUploadServiceDownloadFileServer) Send(m *FileDownloadResponse) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _FileUploadService_GetListFiles_Handler(srv interface{}, stream grpc.ServerStream) error {
@@ -184,17 +243,18 @@ func (x *fileUploadServiceGetListFilesServer) Send(m *ListFilesResponse) error {
 var FileUploadService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "v1.FileUploadService",
 	HandlerType: (*FileUploadServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "UploadFile",
-			Handler:    _FileUploadService_UploadFile_Handler,
-		},
-		{
-			MethodName: "DownloadFile",
-			Handler:    _FileUploadService_DownloadFile_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "UploadFile",
+			Handler:       _FileUploadService_UploadFile_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "DownloadFile",
+			Handler:       _FileUploadService_DownloadFile_Handler,
+			ServerStreams: true,
+		},
 		{
 			StreamName:    "GetListFiles",
 			Handler:       _FileUploadService_GetListFiles_Handler,

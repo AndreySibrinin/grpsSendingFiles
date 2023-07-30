@@ -72,21 +72,41 @@ func uploadFile(client v1.FileUploadServiceClient, scanner *bufio.Scanner) {
 	scanner.Scan()
 	path := scanner.Text()
 
-	fileContent, err := os.ReadFile(path)
-
+	content, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
-
 	fileName := filepath.Base(path)
 
-	_, err = client.UploadFile(context.TODO(), &v1.FileUploadRequest{FileContent: fileContent, FileName: fileName})
+	optimalChunkSize := 512 * 1024
+
+	stream, err := client.UploadFile(context.TODO())
+
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
-	fmt.Println("UPLOAD DONE")
+	for i := 0; i < len(content); i += optimalChunkSize {
+		end := i + optimalChunkSize
+		if end > len(content) {
+			end = len(content)
+		}
+
+		chunk := content[i:end]
+
+		if err := stream.Send(&v1.FileUploadRequest{FileChunk: chunk, FileName: fileName}); err != nil {
+			fmt.Println("Error:", err)
+		}
+	}
+
+	reply, err := stream.CloseAndRecv()
+
+	if err != nil {
+		log.Fatalf("%v.CloseAndRecv() got error %v, want %v", stream, err, nil)
+	}
+
+	log.Printf("Route summary: %v", reply)
 }
 
 // Функция для скачивания файла
@@ -94,17 +114,31 @@ func downloadFile(client v1.FileUploadServiceClient, scanner *bufio.Scanner) {
 
 	fmt.Println("Enter file name:")
 	scanner.Scan()
-	path := scanner.Text()
-	response, err := client.DownloadFile(context.TODO(), &v1.FileDownloadRequest{FileName: path})
+	fileName := scanner.Text()
+
+	stream, err := client.DownloadFile(context.TODO(), &v1.FileDownloadRequest{FileName: fileName})
 
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
 
-	fileContent := response.GetFileContent()
+	fileBytes := make([]byte, 0)
 
-	path = filepath.Join("client", path)
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			log.Fatalf("Error while streaming %v", err)
+		}
+
+		fileBytes = append(fileBytes, resp.GetFileContent()...)
+	}
+
+	path := filepath.Join("client", fileName)
 
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0777)
 
@@ -114,7 +148,7 @@ func downloadFile(client v1.FileUploadServiceClient, scanner *bufio.Scanner) {
 
 	defer file.Close()
 
-	_, err = file.Write(fileContent)
+	_, err = file.Write(fileBytes)
 
 	if err != nil {
 		fmt.Println("Error:", err)
