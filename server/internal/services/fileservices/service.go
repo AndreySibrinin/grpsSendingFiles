@@ -1,10 +1,11 @@
 package fileservices
 
 import (
-	"errors"
 	"github.com/AndreySibrinin/grspSendingFiles/proto/v1"
 	"github.com/AndreySibrinin/grspSendingFiles/server/internal/models"
 	"github.com/djherbis/times"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"path/filepath"
@@ -35,9 +36,9 @@ func (s *Service) UploadFile(stream v1.FileUploadService_UploadFileServer) error
 				Content: fileBytes,
 			}
 
-			if err := s.repo.UploadFile(file); err != nil {
+			if err = s.repo.UploadFile(file); err != nil {
 				log.Printf("Failed to upload file '%s': %v", file.Name, err)
-				return errors.New("failed to upload file: " + err.Error())
+				return status.Errorf(codes.Internal, "failed to upload file: %v", err)
 			}
 
 			log.Printf("File '%s' uploaded successfully", "test.txt")
@@ -47,7 +48,7 @@ func (s *Service) UploadFile(stream v1.FileUploadService_UploadFileServer) error
 		}
 
 		if err != nil {
-			return err
+			return status.Errorf(codes.Internal, "error stream: %s", err)
 		}
 
 		fileBytes = append(fileBytes, chunk.GetFileChunk()...)
@@ -60,7 +61,7 @@ func (s *Service) DownloadFile(req *v1.FileDownloadRequest, stream v1.FileUpload
 	file, err := s.repo.DownloadFile(req.GetFileName())
 	if err != nil {
 		log.Printf("Failed to download file '%s': %v", req.GetFileName(), err)
-		return errors.New("failed to download file: " + err.Error())
+		return status.Errorf(codes.Internal, "failed to download file: %v", err)
 	}
 	optimalChunkSize := 512 * 1024
 
@@ -73,7 +74,7 @@ func (s *Service) DownloadFile(req *v1.FileDownloadRequest, stream v1.FileUpload
 		chunk := file.Content[i:end]
 
 		if err := stream.Send(&v1.FileDownloadResponse{FileContent: chunk}); err != nil {
-			return err
+			return status.Errorf(codes.Internal, "Failed to send chunk: %v", err)
 		}
 	}
 
@@ -85,14 +86,14 @@ func (s *Service) GetListFiles(req *v1.ListFilesRequest, stream v1.FileUploadSer
 	files, err := s.repo.GetListFiles()
 	if err != nil {
 		log.Printf("Failed to get file list: %v", err)
-		return errors.New("failed to get file list: " + err.Error())
+		return status.Errorf(codes.Internal, "Failed to get file list: %v", err)
 	}
 
 	for _, file := range files {
 		t, err := times.Stat(file)
 		if err != nil {
 			log.Printf("Failed to get file times for '%s': %v", file, err)
-			return errors.New("failed to get file times: " + err.Error())
+			return status.Errorf(codes.Internal, "Failed to get file times for '%s': %v", file, err)
 		}
 
 		var modTime, createTime time.Time
@@ -112,7 +113,7 @@ func (s *Service) GetListFiles(req *v1.ListFilesRequest, stream v1.FileUploadSer
 
 		if err := stream.Send(res); err != nil {
 			log.Printf("Failed to send file list for '%s': %v", file, err)
-			return errors.New("failed to send file list: " + err.Error())
+			return status.Errorf(codes.Internal, "Failed to send file list for '%s': %v", file, err)
 		}
 	}
 
